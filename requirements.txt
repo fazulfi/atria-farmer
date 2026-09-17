@@ -1,0 +1,3 @@
+# Runtime dependency for the farmer and the Cloudflare deployment helper.
+# The worker bundler (worker/build.py) uses only the standard library.
+requests>=2.31.0,<3

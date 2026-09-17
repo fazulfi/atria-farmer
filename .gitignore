@@ -1,0 +1,40 @@
+# ── secrets ──────────────────────────────────────────────────────────────────
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+secrets/
+.secrets/
+
+# ── credentials produced by a run ────────────────────────────────────────────
+keys.txt
+keys.jsonl
+keys_failures.txt
+*.csv
+
+# ── build output ─────────────────────────────────────────────────────────────
+worker/dist/
+dist/
+build/
+*.egg-info/
+
+# ── python ───────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.so
+.venv/
+venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# ── editors / os ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
