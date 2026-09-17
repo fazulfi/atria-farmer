@@ -11,6 +11,7 @@ secrets/
 keys.txt
 keys.jsonl
 keys_failures.txt
+keys_dead.txt
 *.csv
 
 # ── run artefacts ────────────────────────────────────────────────────────────
