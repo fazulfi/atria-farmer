@@ -49,34 +49,64 @@ class Mailbox:
 
         Reading is destructive: a successful read removes the message from the
         mailbox, which also prevents a stale code from being replayed.
+
+        A dropped connection is retried once before giving up, because the
+        Cloudflare Worker occasionally takes longer than the timeout on a cold
+        start.
         """
-        try:
-            response = self.session.get(
-                f"{self.base_url}/", params={"email": address}, timeout=self.timeout
-            )
-        except requests.RequestException as exc:
-            raise MailboxError(f"mailbox unreachable: {exc}") from exc
+        last_error = None
+        for attempt in range(2):
+            try:
+                response = self.session.get(
+                    f"{self.base_url}/", params={"email": address}, timeout=self.timeout
+                )
+            except requests.RequestException as exc:
+                last_error = exc
+                if attempt == 0:
+                    time.sleep(1)
+                    continue
+                raise MailboxError(f"mailbox unreachable: {exc}") from exc
 
-        if response.status_code == 404:
-            return None
-        if response.status_code != 200:
-            raise MailboxError(
-                f"mailbox returned HTTP {response.status_code}: {response.text[:120]}"
-            )
-        code = response.text.strip()
-        if not code or code.upper() == "NOT_FOUND":
-            return None
-        return _normalise_code(code)
+            if response.status_code == 404:
+                return None
+            if response.status_code != 200:
+                raise MailboxError(
+                    f"mailbox returned HTTP {response.status_code}: {response.text[:120]}"
+                )
+            code = response.text.strip()
+            if not code or code.upper() == "NOT_FOUND":
+                return None
+            return _normalise_code(code)
 
-    def wait(self, address: str, *, timeout: int, poll: int = 5, log=None) -> Optional[str]:
-        """Poll :meth:`fetch` until a code arrives or ``timeout`` elapses."""
+        raise MailboxError(f"mailbox unreachable: {last_error}")
+
+    def wait(self, address: str, *, timeout: int, poll: int = 5, log=None,
+             max_errors: int = 6) -> Optional[str]:
+        """Poll :meth:`fetch` until a code arrives or ``timeout`` elapses.
+
+        Transient network errors are tolerated rather than fatal.  By the time
+        polling starts the OTP has already been requested and the account is
+        half-registered, so a single dropped connection must not throw that
+        work away — the message is still sitting in the mailbox and the next
+        poll will find it.  Only ``max_errors`` consecutive failures abort.
+        """
         log = log or (lambda *_: None)
         deadline = time.monotonic() + timeout
         waited = 0
+        errors = 0
+
         while time.monotonic() < deadline:
             time.sleep(poll)
             waited += poll
-            code = self.fetch(address)
+            try:
+                code = self.fetch(address)
+            except MailboxError as exc:
+                errors += 1
+                if errors >= max_errors:
+                    raise
+                log(f"mailbox poll failed ({errors}/{max_errors}), retrying: {exc}")
+                continue
+            errors = 0
             if code:
                 log(f"OTP received after {waited}s")
                 return code
