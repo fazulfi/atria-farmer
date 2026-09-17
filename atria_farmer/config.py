@@ -121,7 +121,9 @@ class Config:
     proxy: Optional[str] = None
 
     # Optional ─ 9router
-    ninerouter_db: Optional[str] = None
+    ninerouter_url: str = "http://127.0.0.1:20228"
+    ninerouter_password: Optional[str] = None
+    ninerouter_node: str = "Atria"
 
     # Tuning
     target: int = DEFAULT_TARGET
@@ -164,7 +166,10 @@ class Config:
             cf_domain=_env("ATRIA_CF_DOMAIN") or "",
             captcha_key=_env("ATRIA_CAPTCHA_KEY") or "",
             proxy=_env("ATRIA_PROXY"),
-            ninerouter_db=_env("ATRIA_9ROUTER_DB"),
+            ninerouter_url=_env("ATRIA_9ROUTER_URL", "http://127.0.0.1:20228")
+            or "http://127.0.0.1:20228",
+            ninerouter_password=_env("ATRIA_9ROUTER_PASSWORD"),
+            ninerouter_node=_env("ATRIA_9ROUTER_NODE", "Atria") or "Atria",
             target=_env_int("ATRIA_TARGET", DEFAULT_TARGET),
             workers=_env_int("ATRIA_WORKERS", DEFAULT_WORKERS),
             keys_file=_env("ATRIA_KEYS_FILE", DEFAULT_KEYS_FILE) or DEFAULT_KEYS_FILE,
@@ -216,10 +221,9 @@ class Config:
                 "no ATRIA_PROXY configured — OTP requests are rate limited to "
                 "a few per IP per hour, so throughput will be very low"
             )
-        if self.ninerouter_db and not Path(self.ninerouter_db).exists():
+        if self.ninerouter_password and not self.ninerouter_url.startswith("http"):
             self.warnings.append(
-                f"ATRIA_9ROUTER_DB points at {self.ninerouter_db!r} which does "
-                "not exist — 9router injection will be skipped"
+                f"ATRIA_9ROUTER_URL must be an http(s) URL, got {self.ninerouter_url!r}"
             )
 
     # ── derived ─────────────────────────────────────────────────────────────
@@ -242,7 +246,11 @@ class Config:
             "captcha_region": self.captcha_region,
             "captcha_scene": self.captcha_scene,
             "proxy": _mask_url(self.proxy),
-            "ninerouter_db": self.ninerouter_db or "(disabled)",
+            "ninerouter": (
+                f"{self.ninerouter_url} (node={self.ninerouter_node})"
+                if self.ninerouter_password
+                else "(disabled)"
+            ),
             "target": self.target,
             "workers": self.workers,
             "keys_file": self.keys_file,

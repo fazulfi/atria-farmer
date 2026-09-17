@@ -13,6 +13,14 @@ keys.jsonl
 keys_failures.txt
 *.csv
 
+# ── run artefacts ────────────────────────────────────────────────────────────
+# The harvest log records the worker URL and domain, so it stays out of git.
+harvest.log
+harvest.log.*
+*.bak_*
+*.log
+logs/
+
 # ── build output ─────────────────────────────────────────────────────────────
 worker/dist/
 dist/

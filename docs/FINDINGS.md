@@ -227,6 +227,38 @@ delivery looks wrong.
 
 ---
 
+## 13. 9router rejects its own session cookie over HTTP
+
+The 9router API issues `auth_token` with the `Secure` attribute. Over plain
+HTTP that is a silent trap:
+
+```
+POST /api/auth/login   -> 200 {"success": true}   + Set-Cookie: auth_token=…; Path=/
+GET  /api/providers    -> 401 {"error": "Unauthorized"}      # cookie withheld
+GET  /api/providers    -> 200 {"connections": […] }          # cookie passed explicitly
+```
+
+`requests` honours the `Secure` flag and simply does not send the cookie back,
+so the login appears to succeed and every subsequent call looks unauthorised.
+Pass the token explicitly (`cookies={"auth_token": …}`) and it works.
+
+The API also never echoes stored API keys back, so a client cannot detect
+duplicates by key — match on the connection name instead.
+
+Relevant endpoints:
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/api/auth/login` | `{password}` → sets `auth_token` |
+| `GET` | `/api/provider-nodes` | list provider nodes |
+| `POST` | `/api/provider-nodes` | `{name, prefix, baseUrl, apiType}` |
+| `GET` | `/api/providers` | list connections |
+| `POST` | `/api/providers` | `{provider, apiKey, name}` → 201 |
+| `DELETE` | `/api/providers/{id}` | remove a connection |
+| `POST` | `/api/providers/validate` | `{provider, apiKey}` → `{valid, error}` |
+
+---
+
 ## Reproducing the checks
 
 The probes that established the above are not shipped — they are one-off

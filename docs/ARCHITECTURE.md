@@ -74,9 +74,21 @@ worker deletes the row on read — and `wait()` polls until the code arrives.
 `recent()` and `raw()` exist purely for debugging a delivery problem.
 
 ### `atria_farmer/router9.py`
-Optional. Registers each new key as an `openai-compatible` connection in a
-local 9router SQLite database. Every failure path is swallowed and logged; a
-schema change or a permissions problem degrades to "keys still saved".
+Optional. Registers each new key as a connection on a local 9router instance
+over its HTTP API — `/api/auth/login`, `/api/provider-nodes`, `/api/providers`,
+plus `/api/providers/validate` for a pre-flight check.
+
+Two details are worth knowing:
+
+- **The session cookie is `Secure`, so `requests` will not replay it over
+  plain HTTP.** The login call succeeds and every later call answers `401`.
+  The client therefore passes `auth_token` explicitly as a cookie.
+- **The API never echoes stored keys back**, so duplicate detection keys off the
+  connection name (the e-mail local part). Injection is idempotent: re-running
+  a harvest does not create duplicates.
+
+Every failure path is swallowed and logged; a missing service degrades to
+"keys still saved".
 
 ### `atria_farmer/store.py`
 `ResultStore` appends to `keys.txt` and `keys.jsonl` under a lock, with
@@ -129,7 +141,7 @@ and how they are handled:
 | Cooldown deadline | `Cooldown._lock` |
 | Allocated names | `NamePool._lock` |
 | Output files | `ResultStore._lock` |
-| 9router database | `Router9._lock` + SQLite `busy_timeout` |
+| 9router database | `Router9._lock` + connection cache |
 | Shutdown | `threading.Event` |
 
 `SIGINT`/`SIGTERM` set the stop event; threads finish the account they are on

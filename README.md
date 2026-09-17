@@ -93,7 +93,7 @@ Everything is read from the environment or a local `.env`. See
 | `ATRIA_CF_DOMAIN` | yes | Domain whose catch-all delivers to the worker |
 | `ATRIA_CAPTCHA_KEY` | yes | 2captcha API key |
 | `ATRIA_PROXY` | recommended | `http://user:pass@host:port` |
-| `ATRIA_9ROUTER_DB` | no | Register keys into a local 9router database |
+| `ATRIA_9ROUTER_PASSWORD` | no | Register keys into a local 9router over HTTP |
 | `ATRIA_TARGET` / `ATRIA_WORKERS` | no | Defaults: `100` / `5` |
 
 ---

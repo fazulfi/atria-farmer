@@ -154,6 +154,22 @@ def preflight(conf: Config, log) -> bool:
             print(f"   ! balance may be low for {conf.target} accounts (~$0.004 each)")
 
     print(f"   sign-in endpoint   {conf.signin_url}")
+
+    if conf.ninerouter_password:
+        router = Router9(
+            base_url=conf.ninerouter_url,
+            password=conf.ninerouter_password,
+            node_name=conf.ninerouter_node,
+        )
+        if router.login():
+            node = router.ensure_node()
+            print(f"   9router            OK   {router.describe()}")
+            if node:
+                print(f"   registered keys    {router.count()}")
+        else:
+            print(f"   9router            FAIL {router.describe()}")
+            healthy = False
+
     print("-" * 72)
     return healthy
 
@@ -172,11 +188,19 @@ def run(conf: Config, args, log) -> int:
     if taken:
         log(f"resuming — {len(taken)} address(es) already recorded")
 
-    router = Router9(conf.ninerouter_db, log=log)
-    if conf.ninerouter_db:
-        if router.enabled:
-            router.ensure_node()
-            log(f"9router injection enabled ({router.describe()})")
+    router = Router9(
+        base_url=conf.ninerouter_url,
+        password=conf.ninerouter_password,
+        node_name=conf.ninerouter_node,
+        log=log,
+    )
+    if conf.ninerouter_password:
+        if router.login():
+            node = router.ensure_node()
+            if node:
+                log(f"9router injection enabled ({router.describe()}, {router.count()} key(s) present)")
+            else:
+                log("9router reachable but the provider node could not be prepared")
         else:
             log(f"9router injection unavailable ({router.describe()})")
 
