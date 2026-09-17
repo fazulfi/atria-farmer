@@ -88,17 +88,26 @@ def parse_args(argv=None) -> argparse.Namespace:
 def configure_logging(verbose: bool):
     """Return a thread-safe logger.
 
-    In verbose mode every line is printed.  Otherwise only lines that carry a
-    result — creations, failures, cooldowns — are shown, which keeps a 5-worker
-    run readable.
+    In verbose mode every line is printed.  Otherwise the output keeps the
+    lines that carry a result — per-account summaries, creations, failures,
+    cooldowns — and drops the step-by-step chatter, which keeps a 5-worker run
+    readable.
     """
     lock = threading.Lock()
-    quiet_prefixes = ("[W",)
-    interesting = ("ready in", "failed", "rejected", "no OTP", "created")
+    interesting = (
+        "ready in",
+        "failed",
+        "rejected",
+        "no OTP",
+        "created",
+        "9router:",
+    )
 
     def log(message: str) -> None:
-        if not verbose and message.startswith(quiet_prefixes):
-            if not any(token in message for token in interesting):
+        if not verbose and message.startswith("[W"):
+            # Per-account summary lines look like "[W3] [7/100] …".
+            is_summary = "] [" in message
+            if not is_summary and not any(token in message for token in interesting):
                 return
         stamp = time.strftime("%H:%M:%S")
         with lock:
