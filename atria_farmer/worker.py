@@ -28,6 +28,8 @@ import time
 from dataclasses import dataclass, field
 from typing import Callable, Optional
 
+import requests
+
 from . import config as cfg
 from . import logto
 from .captcha import AliyunSolver, CaptchaError, token_from_solution
@@ -239,6 +241,15 @@ def _farm_one(ctx: Context, worker_id: int, email: str, started: float) -> logto
         except logto.RegistrationError as exc:
             last_error = exc
             ctx.log(f"[W{worker_id}] registration failed: {exc}")
+            time.sleep(2)
+        except requests.RequestException as exc:
+            # A flaky proxy or a dropped connection is transient, so it gets
+            # the same retry budget as a rejected captcha token.
+            last_error = exc
+            ctx.log(
+                f"[W{worker_id}] network error during registration "
+                f"({attempt}/{conf.captcha_attempts}): {exc}"
+            )
             time.sleep(2)
 
     if session is None or verification_id is None:
