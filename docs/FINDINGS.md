@@ -116,9 +116,27 @@ including wildcard suffixes:
 @*.biz.id     @*.my.id     @*.web.id     @duckmail.sbs     @catchmail.io     …
 ```
 
-Any address on a matching domain is refused before the OTP is sent. Plain
-`.com`/`.dev` domains and the usual consumer providers are unaffected. Query the
-live list with:
+Any address on a matching domain is refused before the OTP is sent:
+
+```
+HTTP 422
+{"code": "session.email_blocklist.email_not_allowed",
+ "message": "The email address \"…@uberip.com\" is restricted."}
+```
+
+Note the timing: the refusal happens **after** the captcha has been solved, so
+a blocklisted domain costs a paid captcha solve to discover. Always check the
+domain first:
+
+```bash
+python farm_atria.py --check-domain example.com
+```
+
+Public temp-mail services are the usual casualties — `mail.tm` hands out
+`uberip.com`, which is on the list, so its entire temp-email approach is
+unusable here.
+
+Query the live list directly with:
 
 ```bash
 curl -s 'https://auth.atria-asi.ai/sign-in?app_id=bldfnpl1bq5fekc85mcxi' \

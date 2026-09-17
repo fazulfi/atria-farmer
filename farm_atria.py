@@ -24,6 +24,7 @@ import time
 import requests
 
 from atria_farmer import __version__
+from atria_farmer import ops
 from atria_farmer.captcha import AliyunSolver
 from atria_farmer.config import Config, ConfigError
 from atria_farmer.logto import check_api_key
@@ -50,7 +51,7 @@ def build_parser() -> argparse.ArgumentParser:
             "Nothing is written to disk except the key files."
         ),
     )
-    parser.add_argument("--target", type=int, help="how many accounts to create")
+    parser.add_argument("--target", type=int, help="total number of accounts wanted")
     parser.add_argument("--workers", type=int, help="parallel worker threads")
     parser.add_argument("--keys-file", help="output file for keys (default keys.txt)")
     parser.add_argument(
@@ -62,6 +63,27 @@ def build_parser() -> argparse.ArgumentParser:
         "--verify",
         metavar="API_KEY",
         help="smoke-test an API key against /v1/models, then exit",
+    )
+    parser.add_argument(
+        "--verify-all",
+        action="store_true",
+        help="re-test every key in the ledger and report which are dead",
+    )
+    parser.add_argument(
+        "--list",
+        dest="list_keys",
+        action="store_true",
+        help="summarise the ledger, then exit",
+    )
+    parser.add_argument(
+        "--models",
+        action="store_true",
+        help="list the models available to a key from the ledger",
+    )
+    parser.add_argument(
+        "--check-domain",
+        metavar="DOMAIN",
+        help="test a domain against the platform's live e-mail blocklist",
     )
     parser.add_argument(
         "--resume",
@@ -123,6 +145,100 @@ def cmd_verify(args) -> int:
     return 0 if ok else 1
 
 
+def cmd_check_domain(domain: str) -> int:
+    """Test a domain against the platform's live blocklist.
+
+    Worth running before committing to a domain: a blocklisted address is only
+    refused at OTP time, after a captcha has already been paid for.
+    """
+    print(f"Checking {domain} against the platform blocklist …")
+    try:
+        blocklist = ops.fetch_blocklist()
+    except ops.BlocklistError as exc:
+        print(f"  could not read the blocklist: {exc}", file=sys.stderr)
+        return 1
+
+    entry = ops.match_blocklist(domain, blocklist)
+    if entry:
+        print(f"  BLOCKED — matched {entry!r}")
+        print(f"  ({len(blocklist)} entries in the list)")
+        print("  Registration from this domain is refused with")
+        print("  'session.email_blocklist.email_not_allowed'.")
+        return 1
+
+    print(f"  OK — not on the list ({len(blocklist)} entries checked)")
+    return 0
+
+
+def cmd_list(store: ResultStore) -> int:
+    records = store.load_records()
+    if not records:
+        print(f"No keys recorded in {store.text_path}")
+        return 1
+
+    domains = {}
+    for email, _ in records:
+        domain = email.rsplit("@", 1)[-1].lower()
+        domains[domain] = domains.get(domain, 0) + 1
+
+    print(f"ledger      : {store.text_path}")
+    print(f"jsonl       : {store.json_path}")
+    print(f"accounts    : {len(records)}")
+    print(f"quota total : {len(records) * 100:,}M tokens")
+    print("domains     :")
+    for domain, count in sorted(domains.items(), key=lambda kv: -kv[1]):
+        print(f"  {domain:<34} {count}")
+    print("most recent :")
+    for email, key in records[-5:]:
+        print(f"  {email:<40} {key[:20]}…")
+    return 0
+
+
+def cmd_models(store: ResultStore, conf: Config) -> int:
+    records = store.load_records()
+    if not records:
+        print(f"No keys in {store.text_path}", file=sys.stderr)
+        return 1
+    email, key = records[-1]
+    print(f"Scanning models with {email} …")
+    try:
+        models = ops.scan_models(key, timeout=conf.http_timeout, proxies=conf.proxies)
+    except RuntimeError as exc:
+        print(f"  {exc}", file=sys.stderr)
+        return 1
+    for model in models:
+        print(f"  {model}")
+    print(f"  ({len(models)} model(s))")
+    return 0
+
+
+def cmd_verify_all(store: ResultStore, conf: Config, log) -> int:
+    records = store.load_records()
+    if not records:
+        print(f"No keys in {store.text_path}", file=sys.stderr)
+        return 1
+
+    workers = min(8, len(records))
+    print(f"Verifying {len(records)} key(s) with {workers} worker(s) …\n")
+    results = ops.verify_many(
+        records,
+        workers=workers,
+        timeout=conf.http_timeout,
+        proxies=conf.proxies,
+        log=log,
+    )
+    print(ops.summarise_verification(results))
+
+    dead = [item for item in results if not item.alive]
+    if dead:
+        path = store.text_path.with_name("keys_dead.txt")
+        with open(path, "a", encoding="utf-8") as handle:
+            for item in dead:
+                handle.write(f"{item.email} | {item.api_key} | {item.detail}\n")
+        print(f"\n  dead keys appended to {path}")
+    return 0
+
+
 def preflight(conf: Config, log) -> bool:
     """Validate everything that can be validated without spending money."""
     healthy = True
@@ -164,6 +280,19 @@ def preflight(conf: Config, log) -> bool:
 
     print(f"   sign-in endpoint   {conf.signin_url}")
 
+    # The domain is refused at OTP time if it is blocklisted, which costs a
+    # captcha solve to discover.  Check it up front instead.
+    try:
+        blocklist = ops.fetch_blocklist(user_agent=conf.user_agent)
+        entry = ops.match_blocklist(conf.cf_domain, blocklist)
+        if entry:
+            print(f"   e-mail domain      FAIL {conf.cf_domain} is BLOCKED (matched {entry!r})")
+            healthy = False
+        else:
+            print(f"   e-mail domain      OK   {conf.cf_domain} is not blocklisted")
+    except ops.BlocklistError as exc:
+        print(f"   e-mail domain      ?    could not read the blocklist ({exc})")
+
     if conf.ninerouter_password:
         router = Router9(
             base_url=conf.ninerouter_url,
@@ -196,6 +325,17 @@ def run(conf: Config, args, log) -> int:
     taken = store.load_emails() if args.resume else set()
     if taken:
         log(f"resuming — {len(taken)} address(es) already recorded")
+
+    # ``--target`` is the total number of accounts wanted, not the number to
+    # add this run.  Without this, resuming a finished ledger keeps creating
+    # fresh accounts and quietly overspends on captcha solves.
+    remaining = conf.target - len(taken)
+    if args.resume and remaining <= 0:
+        log(f"already at {len(taken)} account(s); target {conf.target} reached — nothing to do")
+        return 0
+    if args.resume:
+        conf.target = remaining
+        log(f"will create {remaining} more to reach {len(taken) + remaining}")
 
     router = Router9(
         base_url=conf.ninerouter_url,
@@ -296,6 +436,9 @@ def main(argv=None) -> int:
     if args.verify:
         return cmd_verify(args)
 
+    if args.check_domain:
+        return cmd_check_domain(args.check_domain)
+
     try:
         conf = Config.from_env()
     except ConfigError as exc:
@@ -314,6 +457,16 @@ def main(argv=None) -> int:
 
     log = configure_logging(conf.verbose)
     print(BANNER.format(version=__version__))
+
+    store = ResultStore(conf.keys_file)
+
+    # Ledger commands never register anything, so they skip preflight.
+    if args.list_keys:
+        return cmd_list(store)
+    if args.models:
+        return cmd_models(store, conf)
+    if args.verify_all:
+        return cmd_verify_all(store, conf, log)
 
     if args.check:
         return 0 if preflight(conf, log) else 1

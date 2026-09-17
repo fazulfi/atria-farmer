@@ -90,6 +90,20 @@ Two details are worth knowing:
 Every failure path is swallowed and logged; a missing service degrades to
 "keys still saved".
 
+### `atria_farmer/ops.py`
+Maintenance operations that never register anything, so a mistake costs a
+request rather than an account:
+
+- `fetch_blocklist()` / `match_blocklist()` — read the platform's live e-mail
+  blocklist and test a domain against it. Matching understands wildcard
+  suffixes, so `biz.id` does not match `notbiz.id`.
+- `scan_models()` — the models a key can call.
+- `verify_key()` / `verify_many()` — probe keys with a one-token completion.
+  `/v1/models` would be cheaper but a key can list models and still be refused
+  on generation, so the completion is what actually proves the key works. The
+  response also carries `x-rpm-remaining`, the only quota signal the API
+  exposes.
+
 ### `atria_farmer/store.py`
 `ResultStore` appends to `keys.txt` and `keys.jsonl` under a lock, with
 `flush()` + `fsync()` after every record — losing a paid-for account to an

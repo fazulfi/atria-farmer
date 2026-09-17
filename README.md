@@ -80,6 +80,25 @@ Failures are appended to `keys_failures.txt` with the address and the reason.
 python farm_atria.py --verify atr_xxxxxxxx
 ```
 
+### Maintenance commands
+
+None of these register anything, so they are safe to run at any time.
+
+```bash
+python farm_atria.py --list                 # ledger summary, quota total, domains
+python farm_atria.py --verify-all           # re-test every key, list the dead ones
+python farm_atria.py --models               # models available to a key
+python farm_atria.py --check-domain foo.com # is this domain blocklisted?
+```
+
+`--check-domain` is worth running **before** committing to a mail domain: a
+blocklisted domain is only refused at OTP time, after a captcha solve has
+already been paid for.
+
+`--target` counts the **total** number of accounts you want, not the number to
+add this run — so `--resume --target 100` stops as soon as the ledger holds
+100 accounts rather than creating 100 more.
+
 ---
 
 ## Configuration

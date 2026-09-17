@@ -63,23 +63,41 @@ class ResultStore:
             os.fsync(handle.fileno())
 
     # ── reading ─────────────────────────────────────────────────────────────
+    def load_records(self) -> list:
+        """Return every stored account as a ``(email, api_key)`` tuple.
+
+        Falls back to the JSON Lines file when the text file is absent, so a
+        ledger written by a different tool is still usable.
+        """
+        records = []
+        if self.text_path.is_file():
+            for line in self.text_path.read_text(encoding="utf-8").splitlines():
+                parts = [part.strip() for part in line.split("|")]
+                if len(parts) >= 3 and "@" in parts[1]:
+                    records.append((parts[1], parts[2]))
+            if records:
+                return records
+
+        if self.json_path.is_file():
+            for line in self.json_path.read_text(encoding="utf-8").splitlines():
+                try:
+                    item = json.loads(line)
+                except ValueError:
+                    continue
+                if item.get("email") and item.get("api_key"):
+                    records.append((item["email"], item["api_key"]))
+        return records
+
     def load_emails(self) -> set:
         """Return every e-mail address already recorded in ``keys.txt``.
 
         Used to skip work when a run is resumed after a crash.
         """
-        if not self.text_path.is_file():
-            return set()
-        emails = set()
-        for line in self.text_path.read_text(encoding="utf-8").splitlines():
-            parts = [part.strip() for part in line.split("|")]
-            if len(parts) >= 2 and "@" in parts[1]:
-                emails.add(parts[1].lower())
-        return emails
+        return {email.lower() for email, _ in self.load_records()}
 
     def count(self) -> int:
         """Number of accounts already stored."""
-        return len(self.load_emails())
+        return len(self.load_records())
 
     def describe(self) -> str:
         return f"{self.text_path} (+{self.json_path.name})"
