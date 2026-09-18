@@ -104,12 +104,18 @@ class ResultStore:
 
 
 def append_failure(path: str, email: str, reason: str) -> None:
-    """Record a failed attempt so it can be inspected or retried later."""
+    """Record a failed attempt so it can be inspected or retried later.
+
+    The reason is flattened to a single line: an upstream error can carry a
+    multi-line HTML body (a 502 page, for instance), and letting that through
+    would corrupt the one-record-per-line format of the log.
+    """
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+    flat = " ".join(str(reason).split())
     with open(target, "a", encoding="utf-8") as handle:
-        handle.write(f"{stamp} | {email} | {reason}\n")
+        handle.write(f"{stamp} | {email} | {flat}\n")
 
 
 def summarise(succeeded: int, failures: int, elapsed: float) -> str:
