@@ -251,6 +251,16 @@ class Router9:
                 self._names.add(tag)
                 return True
 
+            # A non-2xx reply does not prove the connection was rejected.  The
+            # router stores connections in SQLite, and a busy database can make
+            # it answer 5xx *after* the row has already been committed.  Ask the
+            # router what it actually holds before calling this a failure --
+            # otherwise the ledger records a false negative and the key looks
+            # missing when it is in fact live.
+            self._names = self._fetch_names(node_id)
+            if tag in self._names:
+                return True
+
         self._log(
             f"9router: inject failed for {email} "
             f"(HTTP {response.status_code}: {response.text[:100]})"
