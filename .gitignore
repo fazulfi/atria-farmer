@@ -12,6 +12,8 @@ keys.txt
 keys.jsonl
 keys_failures.txt
 keys_dead.txt
+atria_keys*.txt
+*_keys_*.txt
 *.csv
 
 # ── run artefacts ────────────────────────────────────────────────────────────
